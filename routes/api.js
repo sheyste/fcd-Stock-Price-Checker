@@ -1,54 +1,51 @@
 'use strict';
 const axios = require('axios');
 
-const likeStore = {}; // In-memory IP-based like tracking
+const likeStore = {}; // In-memory like store: { STOCK: Set of IPs }
 
 module.exports = function (app) {
-
   app.route('/api/stock-prices')
     .get(async function (req, res) {
       try {
-        let stocks = req.query.stock;
-        const like = req.query.like === 'true';
+        let { stock, like } = req.query;
         const ip = req.ip;
 
-        if (!stocks) {
+        if (!stock) {
           return res.status(400).json({ error: 'Stock symbol is required' });
         }
 
         // Normalize to array
-        if (!Array.isArray(stocks)) {
-          stocks = [stocks];
-        }
+        const stocks = Array.isArray(stock) ? stock : [stock];
 
-        const results = await Promise.all(stocks.map(async stock => {
-          const symbol = stock.toUpperCase();
+        const results = await Promise.all(stocks.map(async s => {
+          const symbol = s.toUpperCase();
 
-          // Fetch stock data
           const response = await axios.get(`https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${symbol}/quote`);
           const data = response.data;
 
           if (!data || !data.symbol || !data.latestPrice) {
-            throw new Error(`Invalid stock data for ${symbol}`);
+            throw new Error(`Invalid data for ${symbol}`);
           }
 
-          // Handle likes
+          // Initialize like store
           if (!likeStore[symbol]) likeStore[symbol] = new Set();
-          if (like) likeStore[symbol].add(ip);
+
+          // Apply like if requested and not already liked by this IP
+          if (like === 'true') {
+            likeStore[symbol].add(ip);
+          }
 
           return {
-            stock: data.symbol,
+            stock: symbol,
             price: data.latestPrice,
             likes: likeStore[symbol].size
           };
         }));
 
-        // Single stock
         if (results.length === 1) {
           return res.json({ stockData: results[0] });
         }
 
-        // Two stocks: add rel_likes
         const [stock1, stock2] = results;
         return res.json({
           stockData: [
@@ -69,5 +66,4 @@ module.exports = function (app) {
         return res.status(500).json({ error: 'Stock data retrieval failed', details: err.message });
       }
     });
-
 };
