@@ -21,7 +21,6 @@ suite('Functional Tests', function() {
       test('1 stock', function(done) {
        chai.request(server)
         .get('/api/stock-prices')
-        .set('x-forwarded-for', '111.111.233.143') 
         .query({stock: 'goog'})
         .end(function(err, res){
           assert.equal(res.body.stockData.stock, 'goog')
@@ -34,7 +33,6 @@ suite('Functional Tests', function() {
       test('1 stock with like', function(done) {
         chai.request(server)
         .get('/api/stock-prices')
-        .set('x-forwarded-for', '111.111.233.143') 
         .query({stock: 'aapl', like: true})
         .end(function(err, res){
           assert.equal(res.body.stockData.stock, 'aapl')
@@ -46,7 +44,6 @@ suite('Functional Tests', function() {
       test('1 stock with like again (ensure likes arent double counted)', function(done) {
         chai.request(server)
         .get('/api/stock-prices')
-        .set('x-forwarded-for', '111.111.233.143') 
         .query({stock: 'aapl', like: true})
         .end(function(err, res){
           assert.equal(res.body, 'Error: Only 1 Like per IP Allowed')
@@ -57,7 +54,6 @@ suite('Functional Tests', function() {
       test('2 stocks', function(done) {
         chai.request(server)
         .get('/api/stock-prices')
-        .set('x-forwarded-for', '111.111.233.143') 
         .query({stock: ['aapl', 'amzn']})
         .end(function(err, res){
           let stockData = res.body['stockData']
@@ -81,7 +77,6 @@ suite('Functional Tests', function() {
       test('2 stocks with like', function(done) {
         chai.request(server)
         .get('/api/stock-prices')
-        .set('x-forwarded-for', '111.111.233.143') 
         .query({stock: ['spot', 'amzn'], like: true})
         .end(function(err, res){
           let stockData = res.body.stockData
