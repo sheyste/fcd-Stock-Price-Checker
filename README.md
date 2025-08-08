@@ -9,6 +9,7 @@ add this to 'test/2_function-test.js' if you are having error in testing:
 
 code:
 
+```
 var chaiHttp = require('chai-http');
 var chai = require('chai');
 var assert = chai.assert;
@@ -106,3 +107,5 @@ suite('Functional Tests', function() {
     });
 
 });
+
+```
