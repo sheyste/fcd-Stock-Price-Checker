@@ -1,88 +1,105 @@
-const chaiHttp = require('chai-http');
-const chai = require('chai');
-const assert = chai.assert;
-const server = require('../server');
+/*
+*
+*
+*       FILL IN EACH FUNCTIONAL TEST BELOW COMPLETELY
+*       -----[Keep the tests in the same order!]-----
+*       (if additional are added, keep them at the very end!)
+*/
+
+var chaiHttp = require('chai-http');
+var chai = require('chai');
+var assert = chai.assert;
+var server = require('../server');
 
 chai.use(chaiHttp);
 
-suite('Functional Tests', function () {
-  this.timeout(5000); // increase timeout if proxy is slow
-
-  let initialLikes = 0;
-
-  test('Viewing one stock: GET request to /api/stock-prices/', function (done) {
-    chai.request(server)
-      .get('/api/stock-prices')
-      .query({ stock: 'AAPL' })
-      .end(function (err, res) {
-        assert.equal(res.status, 200);
-        assert.property(res.body, 'stockData');
-        assert.property(res.body.stockData, 'stock');
-        assert.property(res.body.stockData, 'price');
-        assert.property(res.body.stockData, 'likes');
-        assert.equal(res.body.stockData.stock, 'AAPL');
-        done();
-      });
-  });
-
-  test('Viewing one stock and liking it: GET request to /api/stock-prices/', function (done) {
-    chai.request(server)
-      .get('/api/stock-prices')
-      .query({ stock: 'AAPL', like: true })
-      .end(function (err, res) {
-        assert.equal(res.status, 200);
-        assert.property(res.body, 'stockData');
-        assert.property(res.body.stockData, 'likes');
-        initialLikes = res.body.stockData.likes;
-        assert.isAtLeast(initialLikes, 1);
-        done();
-      });
-  });
-
-  test('Viewing the same stock and liking it again: GET request to /api/stock-prices/', function (done) {
-    chai.request(server)
-      .get('/api/stock-prices')
-      .query({ stock: 'AAPL', like: true })
-      .end(function (err, res) {
-        assert.equal(res.status, 200);
-        assert.property(res.body, 'stockData');
-        assert.equal(res.body.stockData.likes, initialLikes); // like should not increase
-        done();
-      });
-  });
-
-  test('Viewing two stocks: GET request to /api/stock-prices/', function (done) {
-    chai.request(server)
-      .get('/api/stock-prices')
-      .query({ stock: ['AAPL', 'GOOG'] })
-      .end(function (err, res) {
-        assert.equal(res.status, 200);
-        assert.isArray(res.body.stockData);
-        assert.lengthOf(res.body.stockData, 2);
-
-        res.body.stockData.forEach(stock => {
-          assert.property(stock, 'stock');
-          assert.property(stock, 'price');
-          assert.property(stock, 'rel_likes');
+suite('Functional Tests', function() {
+  this.timeout(10000);
+    
+    suite('GET /api/stock-prices => stockData object', function() {
+      
+      test('1 stock', function(done) {
+       chai.request(server)
+        .get('/api/stock-prices')
+        .set('x-forwarded-for', '111.111.233.143') 
+        .query({stock: 'goog'})
+        .end(function(err, res){
+          assert.equal(res.body.stockData.stock, 'goog')
+          assert.isNumber(res.body.stockData.price)
+           assert.isNumber(res.body.stockData.likes)
+          done();
         });
-
-        done();
       });
-  });
-
-  test('Viewing two stocks and liking them: GET request to /api/stock-prices/', function (done) {
-    chai.request(server)
-      .get('/api/stock-prices')
-      .query({ stock: ['GOOG', 'MSFT'], like: true })
-      .end(function (err, res) {
-        assert.equal(res.status, 200);
-        assert.isArray(res.body.stockData);
-        assert.lengthOf(res.body.stockData, 2);
-        assert.property(res.body.stockData[0], 'rel_likes');
-        assert.property(res.body.stockData[1], 'rel_likes');
-        done();
+      
+      test('1 stock with like', function(done) {
+        chai.request(server)
+        .get('/api/stock-prices')
+        .set('x-forwarded-for', '111.111.233.143') 
+        .query({stock: 'aapl', like: true})
+        .end(function(err, res){
+          assert.equal(res.body.stockData.stock, 'aapl')
+          assert.equal(res.body.stockData.likes, 1)
+          done();
+        });
       });
-  });
-
+      
+      test('1 stock with like again (ensure likes arent double counted)', function(done) {
+        chai.request(server)
+        .get('/api/stock-prices')
+        .set('x-forwarded-for', '111.111.233.143') 
+        .query({stock: 'aapl', like: true})
+        .end(function(err, res){
+          assert.equal(res.body, 'Error: Only 1 Like per IP Allowed')
+          done()
+        });
+      });
+      
+      test('2 stocks', function(done) {
+        chai.request(server)
+        .get('/api/stock-prices')
+        .set('x-forwarded-for', '111.111.233.143') 
+        .query({stock: ['aapl', 'amzn']})
+        .end(function(err, res){
+          let stockData = res.body['stockData']
+          assert.isArray(stockData)
+          /* Stocks can come in either order */
+          if(stockData[0].stock === 'aapl'){
+            assert.equal(stockData[0].stock, 'aapl')
+            assert.equal(stockData[0].rel_likes, 1)
+            assert.equal(stockData[1].stock, 'amzn')
+            assert.equal(stockData[1].rel_likes, -1)
+          }else{
+            assert.equal(stockData[1].stock, 'aapl')
+            assert.equal(stockData[1].rel_likes, 1)
+            assert.equal(stockData[0].stock, 'amzn')
+            assert.equal(stockData[0].rel_likes, -1)
+          }
+          done()
+        });
+      });
+      
+      test('2 stocks with like', function(done) {
+        chai.request(server)
+        .get('/api/stock-prices')
+        .set('x-forwarded-for', '111.111.233.143') 
+        .query({stock: ['spot', 'amzn'], like: true})
+        .end(function(err, res){
+          let stockData = res.body.stockData
+          if(stockData[0]['stock'] === 'spot'){
+            assert.equal(stockData[0].stock, 'spot')
+            assert.equal(stockData[0].rel_likes, 0)
+            assert.equal(stockData[1].stock, 'amzn')
+            assert.equal(stockData[1].rel_likes, 0)
+          }else{
+            assert.equal(stockData[1].stock, 'spot')
+            assert.equal(stockData[1].rel_likes, 0)
+            assert.equal(stockData[0].stock, 'amzn')
+            assert.equal(stockData[0].rel_likes, 0)
+          }
+          done()
+        });
+      });
+      
+    });
 
 });

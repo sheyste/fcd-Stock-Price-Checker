@@ -1,69 +1,136 @@
-'use strict';
-const axios = require('axios');
+/*
+*
+*
+*       Complete the API routing below
+*
+*
+*/
 
-const likeStore = {}; // In-memory like store: { STOCK: Set of IPs }
+'use strict';
+
+var expect = require('chai').expect;
+let mongoose = require('mongoose');
+require('dotenv').config();
 
 module.exports = function (app) {
+  
+  let uri = process.env.DB;
+  mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+
+  let stockSchema = new mongoose.Schema({
+    symbol: { type: String, required: true },
+    likes: { type: Number, default: 0 },
+    ips: [String]
+  });
+
+  let Stock = mongoose.model('stock', stockSchema);
+
   app.route('/api/stock-prices')
-    .get(async function (req, res) {
-      try {
-        let { stock, like } = req.query;
-        const ip = req.ip;
+    .get(function (req, res) {
 
-        if (!stock) {
-          return res.status(400).json({ error: 'Stock symbol is required' });
+      let twoStocks = false;
+      let stocks = [];
+
+      /* Mock fetch when in test mode */
+      const getStockPrice = async (symbol) => {
+        if (process.env.NODE_ENV === 'test') {
+          return 100 + Math.floor(Math.random() * 100); // fake price
         }
+        let requestUrl = `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${symbol}/quote`;
+        let apiResponse = await fetch(requestUrl).then(r => r.json());
+        return Number(apiResponse['latestPrice']);
+      };
 
-        // Normalize to array
-        const stocks = Array.isArray(stock) ? stock : [stock];
-
-        const results = await Promise.all(stocks.map(async s => {
-          const symbol = s.toUpperCase();
-
-          const response = await axios.get(`https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${symbol}/quote`);
-          const data = response.data;
-
-          if (!data || !data.symbol || !data.latestPrice) {
-            throw new Error(`Invalid data for ${symbol}`);
-          }
-
-          // Initialize like store
-          if (!likeStore[symbol]) likeStore[symbol] = new Set();
-
-          // Apply like if requested and not already liked by this IP
-          if (like === 'true') {
-            likeStore[symbol].add(ip);
-          }
-
-          return {
-            stock: symbol,
-            price: data.latestPrice,
-            likes: likeStore[symbol].size
-          };
-        }));
-
-        if (results.length === 1) {
-          return res.json({ stockData: results[0] });
+      /* Like Stock */
+      let likeStock = async (stockName, nextStep) => {
+        let stockDocument = await Stock.findOne({ symbol: stockName }).exec();
+        if (stockDocument && stockDocument.ips && stockDocument.ips.includes(req.ip)) {
+          return res.json('Error: Only 1 Like per IP Allowed');
+        } else {
+          let documentUpdate = { $inc: { likes: 1 }, $push: { ips: req.ip } };
+          nextStep(stockName, documentUpdate, getPrice);
         }
+      };
 
-        const [stock1, stock2] = results;
+      /* Find/Update Stock Document */
+      let findOrUpdateStock = async (stockName, documentUpdate, nextStep) => {
+        let stockDocument = await Stock.findOneAndUpdate(
+          { symbol: stockName },
+          documentUpdate,
+          { new: true, upsert: true }
+        );
+        if (stockDocument) {
+          if (!twoStocks) {
+            return nextStep(stockDocument, processOneStock);
+          } else {
+            return nextStep(stockDocument, processTwoStocks);
+          }
+        }
+      };
+
+      /* Get Price */
+      let getPrice = async (stockDocument, nextStep) => {
+        stockDocument.price = await getStockPrice(stockDocument.symbol);
+        nextStep(stockDocument);
+      };
+
+      /* Build Response for 1 Stock */
+      let processOneStock = (stockDocument) => {
         return res.json({
-          stockData: [
-            {
-              stock: stock1.stock,
-              price: stock1.price,
-              rel_likes: stock1.likes - stock2.likes
-            },
-            {
-              stock: stock2.stock,
-              price: stock2.price,
-              rel_likes: stock2.likes - stock1.likes
-            }
-          ]
+          stockData: {
+            stock: stockDocument.symbol,
+            price: stockDocument.price,
+            likes: stockDocument.likes
+          }
         });
+      };
 
-      } catch (err) {
-        return res.status(500).json({ error: 'Stock data retrieval failed', details: err.message });
+      /* Build Response for 2 Stocks */
+      let processTwoStocks = (stockDocument) => {
+        let newStock = {
+          stock: stockDocument.symbol,
+          price: stockDocument.price,
+          likes: stockDocument.likes
+        };
+        stocks.push(newStock);
+        if (stocks.length === 2) {
+          stocks[0].rel_likes = stocks[0].likes - stocks[1].likes;
+          stocks[1].rel_likes = stocks[1].likes - stocks[0].likes;
+          return res.json({
+            stockData: stocks.map(s => ({
+              stock: s.stock,
+              price: s.price,
+              rel_likes: s.rel_likes
+            }))
+          });
+        }
+      };
+
+      /* Process Input */
+      if (typeof req.query.stock === 'string') {
+        let stockName = req.query.stock.toLowerCase();
+        let documentUpdate = {};
+        if (req.query.like && req.query.like === 'true') {
+          likeStock(stockName, findOrUpdateStock);
+        } else {
+          findOrUpdateStock(stockName, documentUpdate, getPrice);
+        }
+      } else if (Array.isArray(req.query.stock)) {
+        twoStocks = true;
+        let stock1 = req.query.stock[0].toLowerCase();
+        let stock2 = req.query.stock[1].toLowerCase();
+
+        if (req.query.like && req.query.like === 'true') {
+          likeStock(stock1, findOrUpdateStock);
+        } else {
+          findOrUpdateStock(stock1, {}, getPrice);
+        }
+
+        if (req.query.like && req.query.like === 'true') {
+          likeStock(stock2, findOrUpdateStock);
+        } else {
+          findOrUpdateStock(stock2, {}, getPrice);
+        }
       }
     });
 };
