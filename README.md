@@ -4,7 +4,7 @@ This is the boilerplate for the Stock Price Checker project. Instructions for bu
 
 
 
-add this to 'test/2_function-test.js' if you are having error in testing:
+add this cot code ".set('x-forwarded-for', '111.111.233.143') " to 'test/2_function-test.js' if you are having error in testing:
 
 
 code:
